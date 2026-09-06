@@ -1,0 +1,74 @@
+module HttpTests {
+  public module fun check(name: String, given: String, expected: String) -> Nil {
+    let actual = Http.response(given)
+    if actual != expected { print("FAIL " + name); raise :HttpTestFailure }
+    print("PASS " + name)
+    nil
+  }
+
+  public module fun run() -> Nil {
+    let hello = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, Iris!\n"
+    let health = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 16\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}\n"
+    let missing = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 10\r\nConnection: close\r\n\r\nNot Found\n"
+    let denied = "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 19\r\nConnection: close\r\nAllow: GET\r\n\r\nMethod Not Allowed\n"
+    let head = "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 0\r\nConnection: close\r\nAllow: GET\r\n\r\n"
+    let bad = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 12\r\nConnection: close\r\n\r\nBad Request\n"
+    HttpTests.check("hello_when_root", "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n", hello)
+    HttpTests.check("json_when_health", "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n", health)
+    HttpTests.check("404_when_unknown", "GET /missing HTTP/1.1\r\nHost: localhost\r\n\r\n", missing)
+    HttpTests.check("hello_when_query", "GET /?hello=world HTTP/1.1\r\nHost: localhost\r\n\r\n", hello)
+    HttpTests.check("405_when_post", "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n", denied)
+    HttpTests.check("405_when_unknown_method", "CUSTOM / HTTP/1.1\r\nHost: localhost\r\n\r\n", denied)
+    HttpTests.check("405_when_digit_prefixed_method", "1GET / HTTP/1.1\r\nHost: localhost\r\n\r\n", denied)
+    HttpTests.check("405_when_numeric_method", "123 / HTTP/1.1\r\nHost: localhost\r\n\r\n", denied)
+    HttpTests.check("405_when_keyword_method", "nil / HTTP/1.1\r\nHost: localhost\r\n\r\n", denied)
+    HttpTests.check("400_when_source_like_method", "$" + "{raise :injected} / HTTP/1.1\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("hello_after_rejected_methods", "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n", hello)
+    HttpTests.check("405_when_lowercase_get", "get / HTTP/1.1\r\nHost: localhost\r\n\r\n", denied)
+    HttpTests.check("empty_405_when_head", "HEAD / HTTP/1.1\r\nHost: localhost\r\n\r\n", head)
+    HttpTests.check("hello_when_mixed_case_host", "GET / HTTP/1.1\r\nhOsT:\tlocalhost:8080 \t\r\nX-Test: one:two\r\n\r\n", hello)
+    HttpTests.check("hello_when_zero_body", "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n", hello)
+    HttpTests.check("400_when_empty", "", bad)
+    HttpTests.check("400_when_incomplete", "GET / HTTP/1.1\r\nHost: localhost\r\n", bad)
+    HttpTests.check("400_when_lf_only", "GET / HTTP/1.1\nHost: localhost\n\n", bad)
+    HttpTests.check("400_when_extra_space", "GET  / HTTP/1.1\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_missing_target", "GET HTTP/1.1\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_bad_method", "G(ET / HTTP/1.1\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_http10", "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_absolute_target", "GET http://localhost/ HTTP/1.1\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_fragment", "GET /#fragment HTTP/1.1\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_missing_host", "GET / HTTP/1.1\r\n\r\n", bad)
+    HttpTests.check("400_when_empty_host", "GET / HTTP/1.1\r\nHost: \t\r\n\r\n", bad)
+    HttpTests.check("400_when_duplicate_host", "GET / HTTP/1.1\r\nHost: localhost\r\nHOST: localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_host_space", "GET / HTTP/1.1\r\nHost: local host\r\n\r\n", bad)
+    HttpTests.check("400_when_missing_colon", "GET / HTTP/1.1\r\nHost localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_header_name_space", "GET / HTTP/1.1\r\nHost : localhost\r\n\r\n", bad)
+    HttpTests.check("400_when_folded_header", "GET / HTTP/1.1\r\nHost: localhost\r\n folded\r\n\r\n", bad)
+    HttpTests.check("400_when_embedded_lf", "GET / HTTP/1.1\r\nHost: localhost\r\nX: a\nb\r\n\r\n", bad)
+    HttpTests.check("400_when_nul", "GET / HTTP/1.1\r\nHost: localhost\r\nX: \u{0}\r\n\r\n", bad)
+    HttpTests.check("400_when_del", "GET / HTTP/1.1\r\nHost: localhost\r\nX: \u{7f}\r\n\r\n", bad)
+    HttpTests.check("400_when_non_ascii", "GET / HTTP/1.1\r\nHost: localhost\r\nX: \u{e9}\r\n\r\n", bad)
+    HttpTests.check("400_when_transfer_encoding", "GET / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n", bad)
+    HttpTests.check("400_when_get_body_declared", "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1\r\n\r\n", bad)
+    HttpTests.check("400_when_invalid_length", "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: -1\r\n\r\n", bad)
+    HttpTests.check("400_when_duplicate_length", "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nContent-Length: 0\r\n\r\n", bad)
+    HttpTests.check("400_when_body_in_input", "GET / HTTP/1.1\r\nHost: localhost\r\n\r\nx", bad)
+    HttpTests.check("400_when_pipelined", "GET / HTTP/1.1\r\nHost: localhost\r\n\r\nGET /health HTTP/1.1\r\nHost: localhost\r\n\r\n", bad)
+    HttpTests.check("hello_when_source_like_data", "GET / HTTP/1.1\r\nHost: localhost\r\nX: $" + "{raise :injected}\r\n\r\n", hello)
+    mut padding = ""
+    let prefix = "GET / HTTP/1.1\r\nHost: localhost\r\nX: "
+    while padding.byte_length() < 8192 - prefix.byte_length() - 4 { padding = padding + "a" }
+    HttpTests.check("hello_when_exactly_8192_bytes", prefix + padding + "\r\n\r\n", hello)
+    HttpTests.check("400_when_8193_bytes", prefix + padding + "a\r\n\r\n", bad)
+    HttpTests.check("400_when_utf8_exceeds_byte_limit", prefix + padding + "\u{e9}\r\n\r\n", bad)
+    mut many = "GET / HTTP/1.1\r\nHost: localhost\r\n"
+    mut count = 1
+    while count < 64 { many = many + "X: a\r\n"; count = count + 1 }
+    HttpTests.check("hello_when_64_fields", many + "\r\n", hello)
+    HttpTests.check("400_when_65_fields", many + "X: a\r\n\r\n", bad)
+    print("HTTP tests passed: 47")
+    nil
+  }
+}
+
+HttpTests.run()
