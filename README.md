@@ -65,7 +65,7 @@ fixed response bodies are ASCII, so their byte counts are 13, 16, 10, 19 and
 
 Requires an Iris CLI with package support, Git, and Rust 1.93 or newer for the
 native dependency build. Build the CLI from Iris-Language `new-iris-dev` at
-`731eb2f1afc180953819876ba18cb55bbcf50e08` or a compatible later revision with
+`b8e126ee9c97ae1c77bec0a787485f9d56183c26` or a compatible later revision with
 `cargo build -p iris-cli --locked`. Run the following from this repository.
 Native builds execute trusted code; review the pinned dependency before
 authorizing its build and runtime permissions.
