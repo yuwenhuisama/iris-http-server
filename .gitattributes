@@ -1,0 +1,3 @@
+iris.toml text eol=lf
+*.ir text eol=lf
+iris.lock text eol=lf
