@@ -70,6 +70,30 @@ native dependency build. Build the CLI from Iris-Language `new-iris-dev` at
 Native builds execute trusted code; review the pinned dependency before
 authorizing its build and runtime permissions.
 
+On Windows, this repository's `.gitattributes` keeps locked files LF even with
+`core.autocrlf=true` (parent-repository attributes do not govern a submodule).
+For an older CRLF checkout reporting `Integrity` / `package integrity mismatch`,
+inspect `git diff` and `git diff --cached` first. From this demo directory, this
+PowerShell snippet converts only CRLF to LF in the three locked root files,
+preserving all other bytes and edits:
+
+```powershell
+$bytesEncoding = [System.Text.Encoding]::GetEncoding(28591)
+foreach ($file in @('iris.toml', 'src/http.ir', 'src/main.ir')) {
+    $path = (Resolve-Path $file).Path
+    $text = $bytesEncoding.GetString([System.IO.File]::ReadAllBytes($path))
+    [System.IO.File]::WriteAllBytes($path, $bytesEncoding.GetBytes($text.Replace("`r`n", "`n")))
+}
+git diff
+```
+
+Retry installation; other source edits still fail the exact-byte lock check.
+Do not delete/regenerate `iris.lock` or force a checkout over your edits to bypass
+integrity. A displayed `\\?\` prefix is Windows canonical path notation, not
+evidence of the cause. Offline checkout regression: `node tests/checkout.mjs`;
+append an absolute Iris CLI path to also test install and tamper rejection
+(downloads the pinned dependency).
+
 ```bash
 IRIS=/absolute/path/to/iris
 "$IRIS" package install .
