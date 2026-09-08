@@ -2,6 +2,7 @@ import Network
 import Http
 
 module Main {
+  // Single-threaded loopback demo: at most 64 clients, with normal exit after 30 seconds of idle accept.
   public module fun run() -> Nil {
     let listener = Network.listen("127.0.0.1", 8080)
     try {
@@ -21,17 +22,20 @@ module Main {
           if code != "org.iris.network.Timeout" && code != "org.iris.network.Io" { raise error }
           print("Client transport failure: " + code)
         } finally {
+          // Release the client on every success and error path, not just after a successful write.
           client.close()
         }
         clients = clients + 1
       }
     } finally {
+      // Release the listener even when an accept timeout triggers return.
       listener.close()
     }
     nil
   }
 
   private module fun serve(client: Object) -> Nil {
+    // Treat expected read/decode failures as invalid input; propagate unknown errors rather than hide them.
     let headers = try {
       receive(client)
     } catch error {
@@ -42,6 +46,7 @@ module Main {
     let bytes = Http.response(headers).to_bytes()
     mut offset = 0
     mut writes = 0
+    // Writes may be partial: advance by actual progress, stop on zero, and use inclusive slices supported by both engines.
     while offset < bytes.length() && writes < 64 {
       let written = Network.write(client, bytes[offset ..= bytes.length() - 1], 100)
       if written == 0 { return nil }
@@ -52,6 +57,7 @@ module Main {
   }
 
   private module fun receive(client: Object) -> String {
+    // Byte and read limits plus per-read timeouts bound waiting, not a strict wall-clock deadline.
     mut bytes = b""
     mut reads = 0
     mut scanned = 0
@@ -60,6 +66,7 @@ module Main {
       reads = reads + 1
       if chunk.length() == 0 { return "" }
       bytes = bytes + chunk
+      // Retain terminator prefixes across chunks and decode only the first complete header section; discard trailing bytes on close.
       while scanned + 3 < bytes.length() {
         if bytes[scanned] == 13 && bytes[scanned + 1] == 10 && bytes[scanned + 2] == 13 && bytes[scanned + 3] == 10 {
           return Encoding::UTF_8.decode(bytes[0 ..= scanned + 3])

@@ -1,12 +1,15 @@
 module Http {
+  // Pure protocol boundary: requests remain data, never become Iris source, and can be tested without sockets.
   public module fun response(rawHeaders: String) -> String {
     let bad = message("400 Bad Request", "text/plain; charset=utf-8", "Bad Request\n")
+    // Bound allocations by UTF-8 bytes before checking for a single terminator; the pure API rejects bodies and pipelining.
     if rawHeaders.byte_length() > 8192 { return bad }
     let sections = rawHeaders.split("\r\n\r\n")
     if sections.length() != 2 { return bad }
     if sections[1] != "" { return bad }
     let lines = sections[0].split("\r\n")
     if lines.length() > 65 { return bad }
+    // This demo accepts only ASCII headers; subsequent line checks reject bare CR/LF within fields.
     for byte in sections[0].to_bytes() {
       if byte == 9 || byte == 10 || byte == 13 { continue }
       if byte < 32 || byte > 126 { return bad }
@@ -21,6 +24,7 @@ module Http {
     if !token(method) || start[2] != "HTTP/1.1" { return bad }
     if !target.starts_with?("/") || target.contains?("#") || target.contains?("\t") { return bad }
     mut hostSeen = false
+    // Check only basic Host syntax, never authorization or routing; reject duplicate lengths and Transfer-Encoding.
     mut lengthSeen = false
     mut bodyDeclared = false
     mut index = 1
@@ -55,11 +59,13 @@ module Http {
       index = index + 1
     }
     if !hostSeen { return bad }
+    // Reject non-GET methods with 405 without waiting for a body; the HEAD rejection deliberately has no body.
     if method != "GET" {
       let body = if method == "HEAD" { "" } else { "Method Not Allowed\n" }
       return message("405 Method Not Allowed", "text/plain; charset=utf-8", body)
     }
     if bodyDeclared { return bad }
+    // Match paths exactly, ignoring only the query string, without percent-decoding or path normalization.
     let path = target.split("?")[0]
     if path == "/" { return message("200 OK", "text/plain; charset=utf-8", "Hello, Iris!\n") }
     if path == "/health" { return message("200 OK", "application/json", "{\"status\":\"ok\"}\n") }
@@ -76,6 +82,7 @@ module Http {
   }
 
   private module fun message(status: String, contentType: String, body: String) -> String {
+    // Content-Length must count encoded bytes; Connection: close makes the single response per connection explicit.
     let allow = if status == "405 Method Not Allowed" { "Allow: GET\r\n" } else { "" }
     "HTTP/1.1 " + status + "\r\nContent-Type: " + contentType + "\r\nContent-Length: " + body.byte_length().to_string() + "\r\nConnection: close\r\n" + allow + "\r\n" + body
   }
